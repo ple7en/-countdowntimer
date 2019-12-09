@@ -1,0 +1,200 @@
+#include "TM1637.h"
+
+
+#define CLK 8 
+#define DIO 7
+
+#define CLK_E 6
+#define DT 5
+#define SW 4
+#include "GyverEncoder.h"
+#define PRECISE_ALGORITHM
+Encoder enc1(CLK_E, DT, SW);
+
+#define PIN_RELAY 3 // Определяем пин, используемый для подключения реле
+
+TM1637 disp(CLK, DIO);
+
+int8_t TimeDisp[] = {0x00,0x00,0x00,0x00}; 
+byte minute = 0;
+byte second = 0;
+byte hour = 0;
+byte S_minute = 0; // minutes
+byte S_second = 0; // sec.
+byte Step = 1;
+byte start = false;
+byte bl = false;
+byte second_P = second;
+
+
+
+
+ISR (TIMER1_COMPA_vect) // эта функция вызывается прерыванием по таймеру и используется для учета времени для подсчета емкости 
+{
+    start = true;        // и разрешаем измерение силы тока (емкости) 1 раз в секунду
+}
+
+void setup() {
+
+  Serial.begin(9600);
+    enc1.setType(TYPE2);
+  
+    disp.set(7);  // яркость, 0 - 7 (минимум - максимум)
+    disp.init();  // инициализация
+
+    
+    cli(); // запрещаем перывания
+    TCCR1A = 0;                       // устанавливаем настройки таймеря для учета времени
+    TCCR1B = (1<<WGM12) | (1<<CS12);  // mode 4 и делитель 256
+    TIMSK1 |=(1<<OCIE1A);             // прерывание по совпадению
+    TCNT1 = 0;                        //
+    OCR1A = 62499U;                   // 
+    sei(); // разрешаем прерывания
+  disp.point(POINT_ON);
+  
+    pinMode(PIN_RELAY, OUTPUT); // Объявляем пин реле как выход
+    digitalWrite(PIN_RELAY, LOW); // Выключаем реле
+}
+  
+
+
+void loop() {
+  
+ enc1.tick(); // обязательная функция отработки. Должна постоянно опрашиваться
+ 
+ 
+ 
+ switch (Step) {
+  case 1:
+    EncoderButton();
+    break;
+    
+  case 2:   
+    if (start)
+    {
+
+      start = false;  
+
+      if (second > 0)
+      {
+      second--; 
+      }
+      else{
+      if( minute > 0){
+        minute--;
+        second = 59;
+      }
+      else{
+        if( hour > 0){
+        hour--;
+        minute = 60;
+        }
+        else{
+        
+        }
+        
+      }
+      }
+    }
+    if (enc1.isClick()){
+      Step--;
+      
+    }
+    
+      
+    if (hour == 0 && minute == 0 )
+    {
+      digitalWrite(PIN_RELAY, LOW); //отключаем реле
+    }
+    else 
+    {
+      digitalWrite(PIN_RELAY, HIGH); //включаем реле
+    }
+    
+    
+    
+    break;
+  }
+    
+draw();
+}
+
+
+
+void draw(){
+  
+  //мигание точек
+  if (second % 2)
+  {
+    disp.point(true);
+  }
+  else
+  {
+    disp.point(false);
+  }
+  
+  
+  //расчет минут и часов для дисплея
+  
+  TimeDisp[0] = hour / 10;
+    TimeDisp[1] = hour % 10;
+    TimeDisp[2] = minute / 10;
+    TimeDisp[3] = minute % 10;
+    
+  disp.display(TimeDisp); //выводим на экран
+  
+
+  
+}
+
+void EncoderButton(){
+  
+  digitalWrite(PIN_RELAY, LOW); //отключаем реле
+
+  if (enc1.isRight())   
+  {   
+    minute = minute+30; //прибавляем 30 минут
+    if (minute > 59)
+    {
+      hour++;
+      minute = 0;
+    }   
+  }
+
+
+  if (enc1.isLeft())    
+  {
+    if (minute == 0)
+    {
+      if (hour == 0)
+      {
+        hour = 0;
+        minute = 0;
+      }
+      else 
+      {
+        hour--;
+        minute = 30;
+      }
+    }
+    else
+    {
+      if (hour == 0)
+      {
+        hour = 0;
+        minute = 0;
+      }
+      else 
+      {
+        minute = 0;
+      }
+    }
+    
+  }
+
+  if (enc1.isClick()) {
+    Serial.println("Click");
+    Step++;
+  }
+  draw();
+}
